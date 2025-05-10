@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>智慧课堂互动系统</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --space-color: linear-gradient(45deg, #00172D, #0A1931, #1A1A2E);
+            --neon-blue: #4BE3F0;
+            --neon-purple: #BD00FF;
+        }
+
+        body {
+            margin: 0;
+            background: var(--space-color);
+            color: white;
+            font-family: 'Arial', sans-serif;
+            min-height: 100vh;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* 星空动画 */
+        body::before {
+            content: '';
+            position: fixed;
+            width: 200vw;
+            height: 200vh;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+            animation: stars 100s linear infinite;
+            z-index: -1;
+        }
+
+        @keyframes stars {
+            from { transform: translateY(0) translateX(0); }
+            to { transform: translateY(-100vh) translateX(-50vw); }
+        }
+
+        /* 主容器 */
+        .container {
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* 点名系统 */
+        .roll-call {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 15px;
+            border: 2px solid var(--neon-blue);
+            box-shadow: 0 0 20px var(--neon-blue);
+        }
+
+        #nameDisplay {
+            font-size: 4em;
+            margin: 20px;
+            text-shadow: 0 0 15px var(--neon-purple);
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            align-items: center;
+        }
+
+        button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 25px;
+            background: linear-gradient(45deg, #00B4DB, #0083B0);
+            color: white;
+            cursor: pointer;
+            transition: 0.3s;
+            font-size: 1.2em;
+        }
+
+        button:hover {
+            transform: scale(1.1);
+            box-shadow: 0 0 15px var(--neon-blue);
+        }
+
+        /* 小组布局 */
+        .groups {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .group {
+            padding: 15px;
+            border-radius: 12px;
+            position: relative;
+            background: rgba(255,255,255,0.05);
+            border: 2px solid;
+            transition: 0.3s;
+        }
+
+        .group:nth-child(odd) { border-color: #FF6B6B; }
+        .group:nth-child(even) { border-color: #4ECDC4; }
+        .group.leader { border-image: linear-gradient(45deg, gold, orange) 1; }
+        .sub-leader { border-image: linear-gradient(45deg, silver, gray) 1; }
+
+        .group::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            border-radius: 12px;
+            z-index: -1;
+            opacity: 0.5;
+        }
+
+        .score {
+            font-size: 2em;
+            text-align: center;
+            margin: 10px 0;
+        }
+
+        /* 排行榜 */
+        .ranking {
+            position: fixed;
+            right: 20px;
+            top: 20px;
+            background: rgba(0,0,0,0.7);
+            padding: 20px;
+            border-radius: 15px;
+        }
+
+        .crowns i { color: gold; margin: 0 2px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="roll-call">
+        <h1>课堂随机点名系统</h1>
+        <div id="nameDisplay">准备就绪</div>
+        <div class="controls">
+            <button onclick="startRoll()">开始点名</button>
+            <button onclick="stopRoll()">停止</button>
+            <input type="range" id="speed" min="50" max="300" value="100"
+                   oninput="updateSpeed(this.value)">
+        </div>
+    </div>
+
+    <div class="groups" id="groups"></div>
+</div>
+
+<div class="ranking" id="ranking"></div>
+
+<script>
+    // 初始化数据
+    let students = ['SOME STUDENTS'] //INSERT STUDENTS' NAMES HERE!
+
+    let groups = Array.from({length:14}, (_,i) => {
+        const start = i * 4;
+        const end = start + 4;
+        return {
+            id: i+1,
+            name: `第${i+1}组`,
+            members: students.slice(start, end),
+            score: 0,
+            isLeader: i%4 === 0,  // 每4组设一个大组长
+            isSubLeader: i%4 === 1 // 每4组设一个小组长
+        }
+    });
+
+    let rolling = false;
+    let rollInterval;
+    let currentSpeed = 100;
+
+    // 初始化小组
+    function initGroups() {
+        const container = document.getElementById('groups');
+        container.innerHTML = ''; // 清空原有内容
+        groups.forEach(group => {
+            const div = document.createElement('div');
+            div.className = `group ${group.isLeader ? 'leader' :
+                group.isSubLeader ? 'sub-leader' : ''}`;
+            div.innerHTML = `
+                    <div class="name">${group.name}</div>
+                    <div class="members">${group.members.join(', ')}</div>
+                    <div class="score">${group.score}</div>
+                    <button onclick="changeScore(${group.id}, 1)">+1</button>
+                    <button onclick="changeScore(${group.id}, -1)">-1</button>
+                `;
+            container.appendChild(div);
+        });
+        updateRanking();
+    }
+
+    // 分数变更
+    function changeScore(groupId, delta) {
+        const group = groups.find(g => g.id === groupId);
+        group.score += delta;
+        document.querySelectorAll('.group')[groupId-1]
+            .querySelector('.score').textContent = group.score;
+        saveData();
+        updateRanking();
+    }
+
+    // 随机点名
+    function startRoll() {
+        rolling = true;
+        rollInterval = setInterval(() => {
+            document.getElementById('nameDisplay').textContent =
+                students[Math.floor(Math.random() * students.length)];
+        }, currentSpeed);
+    }
+
+    function stopRoll() {
+        clearInterval(rollInterval);
+        rolling = false;
+    }
+
+    function updateSpeed(value) {
+        currentSpeed = 300 - parseInt(value);
+        if(rolling) {
+            stopRoll();
+            startRoll();
+        }
+    }
+
+    // 排行榜更新
+    function updateRanking() {
+        const sorted = [...groups].sort((a,b) => b.score - a.score);
+        const ranking = document.getElementById('ranking');
+        ranking.innerHTML = '<h2>排行榜</h2>';
+        sorted.slice(0,6).forEach((g,i) => {
+            const div = document.createElement('div');
+            div.innerHTML = `
+                    ${i+1}. ${g.name}
+                    <span class="crowns">${'👑'.repeat(3 - i)}</span>
+                    ${g.score}分
+                `;
+            ranking.appendChild(div);
+        });
+    }
+
+    // 数据存储
+    function saveData() {
+        localStorage.setItem('groupsData', JSON.stringify(groups));
+    }
+
+    function loadData() {
+        const data = localStorage.getItem('groupsData');
+        if(data) groups = JSON.parse(data);
+    }
+
+    // 初始化
+    window.onload = () => {
+        loadData();
+        initGroups();
+    };
+</script>
+</body>
+</html>
